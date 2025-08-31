@@ -3,10 +3,8 @@ import { genCode, normalizeUrl } from "./utils.js";
 import { spawn } from "child_process";
 import { Link } from "./types/Links.js";
 import { TinyDB } from "tiny-db";
-import { Hits } from "./types/Hits.js";
 
 const dbLink = new TinyDB<Link>("links.json");
-const dbHits = new TinyDB<Hits>("links.json");
 
 // Simple args: url-short <cmd> [args] [--alias abc] [--len 7]
 const [, , cmd, ...rest] = process.argv;
@@ -60,7 +58,6 @@ async function main() {
             const link = dbLink.filter("links", (val)=> (val.code === code));
             if (!link[0]) { console.error("Not found."); process.exit(2); }
             console.log(link[0].url);
-            // dbHits.upsert("hits", { id: code, hits: (dbHits.filter("hits", (val)=> (val.id === code))[0].hits || 0) + 1 });
             break;
         }
 
@@ -71,7 +68,6 @@ async function main() {
             if (!link[0]) { console.error("Not found."); process.exit(2); }
             // increment hits
             await dbLink.upsert("links", { ...link[0], hits: link[0].hits + 1 });
-            // dbHits.upsert("hits", { id: code, hits: (dbHits.filter("hits", (val)=> (val.id === code))[0].hits || 0) + 1 });
             // macOS: open, Linux: xdg-open, Windows: start
             const opener = process.platform === "darwin" ? "open" :
                 process.platform === "win32" ? "start" : "xdg-open";
