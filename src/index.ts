@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-import { findByCode, loadAll, remove, upsert, Link } from "./store.js";
 import { genCode, normalizeUrl } from "./utils.js";
 import { spawn } from "child_process";
+import { Link } from "./types/Links.js";
+import { TinyDB } from "tiny-db";
+import { Hits } from "./types/Hits.js";
+
+const dbLink = new TinyDB<Link>("links.json");
+const dbHits = new TinyDB<Hits>("links.json");
 
 // Simple args: url-short <cmd> [args] [--alias abc] [--len 7]
 const [, , cmd, ...rest] = process.argv;
@@ -34,14 +39,17 @@ async function main() {
             let code = alias ?? genCode(len);
 
             // ensure uniqueness (regenerate if collision)
-            if (alias && findByCode(alias)) {
+            if (alias && dbLink.filter("links", (val)=> val.code === alias).length > 0) {
                 console.error(`Alias '${alias}' already exists.`);
                 process.exit(2);
             }
-            while (!alias && findByCode(code)) code = genCode(len);
+            while (!alias && dbLink.filter("links", (val)=> val.code === code).length > 0) {
+                code = genCode(len);
+            }
 
-            const link: Link = { code, url, createdAt: new Date().toISOString(), hits: 0 };
-            upsert(link);
+            const link: Link = { id: code, code, url, createdAt: new Date().toISOString(), hits: 0 };
+
+            await dbLink.upsert("links", link);
             console.log(code);
             break;
         }
@@ -49,29 +57,31 @@ async function main() {
         case "-e": {
             const code = rest.find(x => !x.startsWith("--"));
             if (!code) { console.error("Provide a code."); process.exit(1); }
-            const link = findByCode(code);
-            if (!link) { console.error("Not found."); process.exit(2); }
-            console.log(link.url);
+            const link = dbLink.filter("links", (val)=> (val.code === code));
+            if (!link[0]) { console.error("Not found."); process.exit(2); }
+            console.log(link[0].url);
+            // dbHits.upsert("hits", { id: code, hits: (dbHits.filter("hits", (val)=> (val.id === code))[0].hits || 0) + 1 });
             break;
         }
 
         case "-o": {
             const code = rest.find(x => !x.startsWith("--"));
             if (!code) { console.error("Provide a code."); process.exit(1); }
-            const link = findByCode(code);
-            if (!link) { console.error("Not found."); process.exit(2); }
+            const link = dbLink.filter("links", (val)=> (val.code === code));
+            if (!link[0]) { console.error("Not found."); process.exit(2); }
             // increment hits
-            upsert({ ...link, hits: link.hits + 1 });
+            await dbLink.upsert("links", { ...link[0], hits: link[0].hits + 1 });
+            // dbHits.upsert("hits", { id: code, hits: (dbHits.filter("hits", (val)=> (val.id === code))[0].hits || 0) + 1 });
             // macOS: open, Linux: xdg-open, Windows: start
             const opener = process.platform === "darwin" ? "open" :
                 process.platform === "win32" ? "start" : "xdg-open";
-            spawn(opener, [link.url], { stdio: "ignore", shell: true });
-            console.log(`Opened ${link.url}`);
+            spawn(opener, [link[0].url], { stdio: "ignore", shell: true });
+            console.log(`Opened ${link[0].url}`);
             break;
         }
 
         case "-l": {
-            const links = loadAll();
+            const links = dbLink.findAll("links");
             if (!links.length) { console.log("(empty)"); return; }
             for (const l of links) {
                 console.log(`${l.code}\t${l.url}\t[hits:${l.hits}] [created:${l.createdAt}]`);
@@ -82,7 +92,7 @@ async function main() {
         case "-d": {
             const code = rest.find(x => !x.startsWith("--"));
             if (!code) { console.error("Provide a code."); process.exit(1); }
-            const ok = remove(code);
+            const ok = await dbLink.remove("links", code);
             console.log(ok ? "Deleted." : "Not found.");
             break;
         }

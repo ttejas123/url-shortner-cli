@@ -19,6 +19,7 @@ function ensureDb() {
 
 export function loadAll(): Link[] {
     ensureDb();
+    console.log("Loading links from", DB_PATH);
     const raw = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
     return raw.links as Link[];
 }
